@@ -31,6 +31,7 @@ const micBtn = document.getElementById('micBtn');
 const camBtn = document.getElementById('camBtn');
 const screenBtn = document.getElementById('screenBtn');
 const bibleToolBtn = document.getElementById('bibleToolBtn');
+const lyricToolBtn = document.getElementById('lyricToolBtn');
 const chatToolBtn = document.getElementById('chatToolBtn');
 const pesertaToolBtn = document.getElementById('pesertaToolBtn');
 const moreToolBtn = document.getElementById('moreToolBtn');
@@ -50,6 +51,7 @@ const panelCloseBtn = document.getElementById('panelCloseBtn');
 const tabButtons = document.querySelectorAll('.tab-btn');
 const chatTab = document.getElementById('chatTab');
 const alkitabTab = document.getElementById('alkitabTab');
+const lirikTab = document.getElementById('lirikTab');
 const pesertaTab = document.getElementById('pesertaTab');
 
 const shareTopBtn = document.getElementById('shareTopBtn');
@@ -199,6 +201,7 @@ async function joinAndConnect(name, peran, role, hostPasswordInput) {
     setupMoreMenu();
     setupSharePopup();
     initBiblePanel();
+    setupLyricPanel();
     startTimer();
     updateParticipantUI();
     updateToolbarVisibility();
@@ -256,6 +259,7 @@ function setupControls() {
   });
 
   bibleToolBtn.addEventListener('click', () => openPanel('alkitab'));
+  lyricToolBtn.addEventListener('click', () => openPanel('lirik'));
   chatToolBtn.addEventListener('click', () => openPanel('chat'));
   pesertaToolBtn.addEventListener('click', () => openPanel('peserta'));
   chatTopBtn.addEventListener('click', () => openPanel('chat'));
@@ -437,16 +441,18 @@ function updateToolbarVisibility() {
   const privileged = isHost || isCoHost;
   screenBtn.classList.toggle('hidden', !privileged);
   bibleToolBtn.classList.toggle('hidden', !privileged);
+  lyricToolBtn.classList.toggle('hidden', !privileged);
   pesertaToolBtn.classList.toggle('hidden', !privileged);
   moreToolBtn.classList.toggle('hidden', !privileged);
   participantsTopBtn.classList.toggle('hidden', !privileged);
   document.querySelector('.tab-btn[data-tab="alkitab"]').classList.toggle('hidden', !privileged);
+  document.querySelector('.tab-btn[data-tab="lirik"]').classList.toggle('hidden', !privileged);
   document.querySelector('.tab-btn[data-tab="peserta"]').classList.toggle('hidden', !privileged);
 
   // Kalau tab yang lagi aktif jadi gak boleh diakses lagi, balikin ke tab Chat
   if (!privileged) {
     const active = document.querySelector('.tab-btn.active')?.dataset.tab;
-    if (active === 'alkitab' || active === 'peserta') switchTab('chat');
+    if (active === 'alkitab' || active === 'lirik' || active === 'peserta') switchTab('chat');
   }
 }
 
@@ -506,6 +512,7 @@ function switchTab(tabName) {
   tabButtons.forEach((b) => b.classList.toggle('active', b.dataset.tab === tabName));
   chatTab.classList.toggle('hidden', tabName !== 'chat');
   alkitabTab.classList.toggle('hidden', tabName !== 'alkitab');
+  lirikTab.classList.toggle('hidden', tabName !== 'lirik');
   pesertaTab.classList.toggle('hidden', tabName !== 'peserta');
   if (tabName === 'peserta') renderParticipantsList();
 }
@@ -656,8 +663,8 @@ function handleDataMessage(msg) {
   } else if (msg.type === 'pin-remove') {
     pinnedMessages = pinnedMessages.filter((p) => p.id !== msg.id);
     renderPinned();
-  } else if (msg.type === 'verse-show') {
-    verseOverlayText.textContent = msg.teks;
+  } else if (msg.type === 'verse-show' || msg.type === 'lyric-show') {
+    verseOverlayText.innerHTML = escapeHtml(msg.teks).replace(/\n/g, '<br>');
     verseOverlayRef.textContent = msg.referensi;
     verseOverlay.classList.remove('hidden');
   } else if (msg.type === 'verse-hide') {
@@ -816,9 +823,75 @@ function broadcastVerse() {
     : `${kitabAktif} ${pasalAktif}:${dipilih[0].vnumber} (${versiLabel})`;
   const teks = dipilih.map((a) => a.teks).join(' ');
 
-  verseOverlayText.textContent = teks;
+  verseOverlayText.innerHTML = escapeHtml(teks).replace(/\n/g, '<br>');
   verseOverlayRef.textContent = referensi;
   verseOverlay.classList.remove('hidden');
 
   sendData({ type: 'verse-show', teks, referensi });
+}
+
+// ==================== FITUR LIRIK LAGU (paste manual, gak disimpan) ====================
+
+const lirikInput = document.getElementById('lirikInput');
+const prosesLirikBtn = document.getElementById('prosesLirikBtn');
+const lirikListContainer = document.getElementById('lirikListContainer');
+const showLirikBtn = document.getElementById('showLirikBtn');
+const hideLirikBtn = document.getElementById('hideLirikBtn');
+
+let daftarBaitLirik = [];
+let baitTerpilih = 0;
+let lyricPanelInitialized = false;
+
+function setupLyricPanel() {
+  if (lyricPanelInitialized) return;
+  lyricPanelInitialized = true;
+
+  prosesLirikBtn.addEventListener('click', () => {
+    const teks = lirikInput.value.trim();
+    if (!teks) return alert('Paste dulu lirik lagunya ya.');
+
+    // Pisahkan jadi bait berdasarkan baris kosong; kalau gak ada baris kosong, per-baris jadi 1 bait
+    let bait = teks.split(/\n\s*\n+/).map((b) => b.trim()).filter(Boolean);
+    if (bait.length <= 1) bait = teks.split('\n').map((b) => b.trim()).filter(Boolean);
+
+    daftarBaitLirik = bait;
+    baitTerpilih = 0;
+    renderDaftarBaitLirik();
+  });
+
+  showLirikBtn.addEventListener('click', broadcastLirik);
+  hideLirikBtn.addEventListener('click', () => {
+    verseOverlay.classList.add('hidden');
+    sendData({ type: 'verse-hide' });
+  });
+}
+
+function renderDaftarBaitLirik() {
+  lirikListContainer.innerHTML = '';
+  if (!daftarBaitLirik.length) {
+    lirikListContainer.innerHTML = '<div class="hint">Belum ada lirik diproses.</div>';
+    return;
+  }
+  daftarBaitLirik.forEach((b, i) => {
+    const div = document.createElement('div');
+    div.className = 'ayat-row' + (i === baitTerpilih ? ' aktif' : '');
+    div.innerHTML = `<span class="ayat-num">${i + 1}</span>${b.replace(/\n/g, '<br>')}`;
+    div.onclick = () => {
+      baitTerpilih = i;
+      renderDaftarBaitLirik();
+    };
+    lirikListContainer.appendChild(div);
+  });
+}
+
+function broadcastLirik() {
+  if (!daftarBaitLirik.length) return alert('Proses lirik dulu sebelum ditampilkan.');
+  const teks = daftarBaitLirik[baitTerpilih];
+  const referensi = `Bait ${baitTerpilih + 1} dari ${daftarBaitLirik.length}`;
+
+  verseOverlayText.innerHTML = escapeHtml(teks).replace(/\n/g, '<br>');
+  verseOverlayRef.textContent = referensi;
+  verseOverlay.classList.remove('hidden');
+
+  sendData({ type: 'lyric-show', teks, referensi });
 }

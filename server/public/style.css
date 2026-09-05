@@ -339,6 +339,19 @@ button.danger:hover { background: #c7362f; }
 .ayat-row .ayat-num { font-weight: 700; color: #a689ff; margin-right: 6px; }
 .hint { font-size: 12px; color: #7a7f8c; margin: 6px 0 12px; }
 
+.lirik-textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid #23262f;
+  background: #0b0d12;
+  color: #f2f2f2;
+  font-size: 13.5px;
+  font-family: inherit;
+  resize: vertical;
+  margin-bottom: 10px;
+}
+
 /* Peserta tab */
 .participants-list { display: flex; flex-direction: column; gap: 4px; }
 .participant-row {
