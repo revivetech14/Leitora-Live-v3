@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Leitora Live</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="landing">
+    <h1>🔴 Leitora Live</h1>
+    <p class="subtitle">Buat ruang siaran baru untuk pelayanan dan kolaborasi tim.</p>
+
+    <div class="card">
+      <div class="input-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        <input id="hostName" type="text" placeholder="Nama kamu" />
+      </div>
+      <div class="input-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        <input id="hostRole" type="text" placeholder="Peran (opsional), misal: Host / Pemusik" />
+      </div>
+      <div class="input-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        <input id="hostPassword" type="password" placeholder="Password Host" autocomplete="new-password" />
+        <button type="button" id="togglePasswordBtn" class="input-icon-btn" title="Lihat password">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/></svg>
+        </button>
+      </div>
+      <button id="createBtn">
+        <svg viewBox="0 0 24 24" fill="currentColor" stroke="none" class="btn-icon"><polygon points="6 3 20 12 6 21 6 3"/></svg>
+        Mulai Siaran Baru
+      </button>
+    </div>
+
+    <div id="result" class="result hidden">
+      <div class="result-header">
+        <div class="result-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13a10 10 0 0 1 14 0"/><path d="M8.5 16.5a5 5 0 0 1 7 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+        </div>
+        <div>
+          <div class="result-title">Siaran siap!</div>
+          <div class="result-subtitle">Bagikan link di bawah ini ke Host dan Jemaat.</div>
+        </div>
+      </div>
+
+      <div class="link-section">
+        <div class="link-section-header">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="link-section-icon lock"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          <span class="link-section-title">Untuk Host <span class="muted-inline">(Hanya kamu)</span></span>
+        </div>
+        <p class="link-section-desc">Link ini bersifat rahasia. Jangan dibagikan ke orang lain.</p>
+        <div class="link-box">
+          <input id="hostLinkInput" type="text" readonly />
+          <button id="copyHostBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>Salin</button>
+        </div>
+      </div>
+
+      <div class="link-section">
+        <div class="link-section-header">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="link-section-icon users"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          <span class="link-section-title">Untuk Jemaat</span>
+        </div>
+        <p class="link-section-desc">Bagikan link ini agar jemaat dapat join.</p>
+        <div class="link-box">
+          <input id="shareLinkInput" type="text" readonly />
+          <button id="copyBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>Salin</button>
+        </div>
+      </div>
+
+      <a id="enterBtn" class="btn-primary" href="#">
+        <svg viewBox="0 0 24 24" fill="currentColor" stroke="none" class="btn-icon"><polygon points="6 3 20 12 6 21 6 3"/></svg>
+        <span>
+          Masuk ke Siaran Sekarang
+          <span class="btn-primary-sub">Masuk sebagai Host</span>
+        </span>
+      </a>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
