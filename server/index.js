@@ -72,9 +72,10 @@ app.post('/api/token', async (req, res) => {
     at.addGrant({
       room,
       roomJoin: true,
-      canPublish: true,         // semua peserta boleh nyalakan kamera/mic/screen share
-      canPublishData: true,     // semua bisa kirim chat/reaction
-      canSubscribe: true,       // semua bisa nonton & dengar
+      canPublish: true,            // semua peserta boleh nyalakan kamera/mic/screen share
+      canPublishData: true,        // semua bisa kirim chat/reaction
+      canSubscribe: true,          // semua bisa nonton & dengar
+      canUpdateOwnMetadata: true,  // dibutuhkan buat fitur peran & co-host
     });
 
     const token = await at.toJwt();
