@@ -552,7 +552,7 @@ button.danger:hover { background: #c7362f; }
 }
 
 @media (max-width: 720px) {
-  .side-panel { position: fixed; inset: 0; top: 54px; z-index: 40; width: 100%; max-width: 100%; }
+  .side-panel { position: fixed; inset: 0; top: 54px; z-index: 60; width: 100%; max-width: 100%; }
   .tool-label { display: none; }
   .bottom-toolbar { gap: 10px; }
 }
