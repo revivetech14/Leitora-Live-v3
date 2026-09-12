@@ -438,6 +438,38 @@ button.danger:hover { background: #c7362f; }
 .share-popup .link-box input { padding: 8px 10px; font-size: 12px; }
 .share-popup .link-box button { padding: 8px 12px; font-size: 12px; }
 
+/* Badge kualitas sinyal */
+.badge.badge-quality-excellent { color: #6fdd8b; }
+.badge.badge-quality-good { color: #e8c547; }
+.badge.badge-quality-poor { color: #ff8080; }
+
+/* Banner saran matikan kamera pas sinyal lemah */
+.quality-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #3a2410;
+  border-bottom: 1px solid #5a3a18;
+  color: #ffd699;
+  padding: 10px 18px;
+  font-size: 13px;
+  position: relative;
+  z-index: 54;
+}
+.quality-banner button { padding: 6px 12px; font-size: 12.5px; }
+.quality-banner .icon-btn {
+  background: transparent;
+  padding: 4px 8px;
+  margin-left: auto;
+  color: #ffd699;
+  font-size: 16px;
+}
+.quality-banner .icon-btn:hover { background: rgba(255,255,255,0.08); }
+
+@media (max-width: 720px) {
+  .quality-banner { flex-wrap: wrap; }
+}
+
 /* ==================== Bottom toolbar ==================== */
 .bottom-toolbar {
   display: flex;
