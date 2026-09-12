@@ -124,7 +124,18 @@ async function joinAndConnect(name, peran, role, hostPasswordInput) {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Gagal ambil token');
 
-    room = new LivekitClient.Room({ adaptiveStream: true, dynacast: true });
+    room = new LivekitClient.Room({
+      adaptiveStream: true,
+      dynacast: true,
+      videoCaptureDefaults: {
+        resolution: LivekitClient.VideoPresets.h180.resolution, // video dikecilin, prioritas ke audio
+      },
+      publishDefaults: {
+        audioPreset: LivekitClient.AudioPresets.music, // audio lebih jernih (cocok utk gitar+vokal)
+        red: true,   // redundansi paket audio -> anti putus2 pas sinyal jelek
+        dtx: true,   // hemat bandwidth pas hening
+      },
+    });
 
     room.on(LivekitClient.RoomEvent.TrackSubscribed, (track, publication, participant) => {
       attachTrack(track, participant);
@@ -178,7 +189,13 @@ async function joinAndConnect(name, peran, role, hostPasswordInput) {
     const skipCam = !isHost && roomSettings.autoCameraOffNewJoin;
 
     if (!skipCam) await room.localParticipant.setCameraEnabled(true);
-    if (!skipMic) await room.localParticipant.setMicrophoneEnabled(true);
+    if (!skipMic) {
+      await room.localParticipant.setMicrophoneEnabled(true, {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      });
+    }
 
     room.localParticipant.videoTrackPublications.forEach((pub) => {
       if (pub.track) attachTrack(pub.track, room.localParticipant);
@@ -214,7 +231,11 @@ async function joinAndConnect(name, peran, role, hostPasswordInput) {
 function setupControls() {
   micBtn.addEventListener('click', async () => {
     const enabled = room.localParticipant.isMicrophoneEnabled;
-    await room.localParticipant.setMicrophoneEnabled(!enabled);
+    await room.localParticipant.setMicrophoneEnabled(!enabled, {
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+    });
     micBtn.classList.toggle('off', enabled);
     micBtn.querySelector('.tool-icon').innerHTML = enabled ? ICON_MIC_OFF : ICON_MIC;
     updateMicIndicator(room.localParticipant);
