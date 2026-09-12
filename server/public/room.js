@@ -29,6 +29,11 @@ const spotlight = document.getElementById('spotlight');
 
 const micBtn = document.getElementById('micBtn');
 const camBtn = document.getElementById('camBtn');
+const switchCamBtn = document.getElementById('switchCamBtn');
+const connQualityBadge = document.getElementById('connQualityBadge');
+const qualityBanner = document.getElementById('qualityBanner');
+const turnOffCamFromBanner = document.getElementById('turnOffCamFromBanner');
+const dismissQualityBanner = document.getElementById('dismissQualityBanner');
 const screenBtn = document.getElementById('screenBtn');
 const bibleToolBtn = document.getElementById('bibleToolBtn');
 const lyricToolBtn = document.getElementById('lyricToolBtn');
@@ -88,6 +93,8 @@ let openParticipantMenuFor = null;
 const MAKS_COHOST = 3;
 let pinnedMessages = [];
 let roomSettings = { autoMuteNewJoin: false, autoCameraOffNewJoin: false };
+let currentFacingMode = 'user'; // 'user' = depan, 'environment' = belakang
+let poorQualityDismissed = false;
 
 if (!roomName) {
   document.body.innerHTML = '<div class="landing"><h1>Link tidak valid</h1><p class="subtitle">Parameter room tidak ditemukan di URL.</p></div>';
@@ -164,6 +171,9 @@ async function joinAndConnect(name, peran, role, hostPasswordInput) {
     room.on(LivekitClient.RoomEvent.TrackMuted, (pub, participant) => updateMicIndicator(participant));
     room.on(LivekitClient.RoomEvent.TrackUnmuted, (pub, participant) => updateMicIndicator(participant));
     room.on(LivekitClient.RoomEvent.ParticipantMetadataChanged, () => renderParticipantsList());
+    room.on(LivekitClient.RoomEvent.ConnectionQualityChanged, (quality, participant) => {
+      if (participant === room.localParticipant) updateConnQualityUI(quality);
+    });
     room.on(LivekitClient.RoomEvent.Disconnected, () => {
       if (intentionalLeave) return; // kita sendiri yang klik Keluar, sudah dihandle di tombolnya
       alert('Siaran telah diakhiri oleh host, atau koneksi kamu terputus.');
@@ -261,6 +271,37 @@ function setupControls() {
         }
       });
     }
+  });
+
+  switchCamBtn.addEventListener('click', async () => {
+    try {
+      const cameraPub = [...room.localParticipant.videoTrackPublications.values()]
+        .find((pub) => pub.source === LivekitClient.Track.Source.Camera);
+      if (!cameraPub || !cameraPub.track) {
+        alert('Nyalakan kamera dulu ya sebelum bisa diganti.');
+        return;
+      }
+      currentFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
+      await cameraPub.track.restartTrack({ facingMode: currentFacingMode });
+    } catch (err) {
+      console.warn('Gagal ganti kamera:', err);
+      alert('Gagal ganti kamera. Kemungkinan HP/browser kamu cuma punya 1 kamera.');
+    }
+  });
+
+  turnOffCamFromBanner.addEventListener('click', async () => {
+    if (room.localParticipant.isCameraEnabled) {
+      await room.localParticipant.setCameraEnabled(false);
+      camBtn.classList.add('off');
+      camBtn.querySelector('.tool-icon').innerHTML = ICON_CAM_OFF;
+      document.getElementById(`tile-${room.localParticipant.identity}`)?.querySelector('video')?.remove();
+    }
+    qualityBanner.classList.add('hidden');
+  });
+
+  dismissQualityBanner.addEventListener('click', () => {
+    poorQualityDismissed = true;
+    qualityBanner.classList.add('hidden');
   });
 
   screenBtn.addEventListener('click', async () => {
@@ -365,6 +406,30 @@ function updateMicIndicator(participant) {
   el.innerHTML = muted ? ICON_MIC_OFF : ICON_MIC;
 }
 
+// ==================== INDIKATOR KUALITAS SINYAL ====================
+// LiveKit cuma kasih 3 tingkat (Excellent/Good/Poor), bukan angka ms mentah -> lebih gampang dipahami peserta awam.
+
+function updateConnQualityUI(quality) {
+  const Q = LivekitClient.ConnectionQuality;
+  connQualityBadge.classList.remove('badge-quality-excellent', 'badge-quality-good', 'badge-quality-poor');
+
+  if (quality === Q.Excellent) {
+    connQualityBadge.textContent = '🟢 Sinyal baik';
+    connQualityBadge.classList.add('badge-quality-excellent');
+    qualityBanner.classList.add('hidden');
+  } else if (quality === Q.Good) {
+    connQualityBadge.textContent = '🟡 Sinyal sedang';
+    connQualityBadge.classList.add('badge-quality-good');
+    qualityBanner.classList.add('hidden');
+  } else if (quality === Q.Poor) {
+    connQualityBadge.textContent = '🔴 Sinyal lemah';
+    connQualityBadge.classList.add('badge-quality-poor');
+    if (room.localParticipant.isCameraEnabled && !poorQualityDismissed) {
+      qualityBanner.classList.remove('hidden');
+    }
+  }
+}
+
 // ==================== TOP BAR: JUMLAH PESERTA & TIMER ====================
 
 function updateParticipantUI() {
@@ -463,17 +528,16 @@ function updateToolbarVisibility() {
   screenBtn.classList.toggle('hidden', !privileged);
   bibleToolBtn.classList.toggle('hidden', !privileged);
   lyricToolBtn.classList.toggle('hidden', !privileged);
-  pesertaToolBtn.classList.toggle('hidden', !privileged);
   moreToolBtn.classList.toggle('hidden', !privileged);
-  participantsTopBtn.classList.toggle('hidden', !privileged);
   document.querySelector('.tab-btn[data-tab="alkitab"]').classList.toggle('hidden', !privileged);
   document.querySelector('.tab-btn[data-tab="lirik"]').classList.toggle('hidden', !privileged);
-  document.querySelector('.tab-btn[data-tab="peserta"]').classList.toggle('hidden', !privileged);
+  // Peserta (siapa aja yang join) sengaja TIDAK di-hide -> semua peran boleh lihat daftar peserta.
+  // Tombol "jadikan co-host" di dalam daftar itu sendiri tetap cuma dikasih ke host (lihat renderParticipantsList).
 
   // Kalau tab yang lagi aktif jadi gak boleh diakses lagi, balikin ke tab Chat
   if (!privileged) {
     const active = document.querySelector('.tab-btn.active')?.dataset.tab;
-    if (active === 'alkitab' || active === 'lirik' || active === 'peserta') switchTab('chat');
+    if (active === 'alkitab' || active === 'lirik') switchTab('chat');
   }
 }
 
