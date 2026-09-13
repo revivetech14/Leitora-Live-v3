@@ -46,6 +46,7 @@ const chatTopBtn = document.getElementById('chatTopBtn');
 
 const moreMenu = document.getElementById('moreMenu');
 const moreMenuHostOnly = document.getElementById('moreMenuHostOnly');
+const proAudioModeToggle = document.getElementById('proAudioModeToggle');
 const moreMenuNotHost = document.getElementById('moreMenuNotHost');
 const autoMuteToggle = document.getElementById('autoMuteToggle');
 const autoCamOffToggle = document.getElementById('autoCamOffToggle');
@@ -95,6 +96,19 @@ let pinnedMessages = [];
 let roomSettings = { autoMuteNewJoin: false, autoCameraOffNewJoin: false };
 let currentFacingMode = 'user'; // 'user' = depan, 'environment' = belakang
 let poorQualityDismissed = false;
+let professionalAudioMode = false; // true = input dari mixer/soundcard, matiin echo cancellation dkk
+
+// Setting mic disesuaikan tergantung mode: HP biasa vs mixer/soundcard profesional
+function getMicCaptureOptions() {
+  return professionalAudioMode
+    ? { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 2 }
+    : { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
+}
+function getMicPublishOptions() {
+  return professionalAudioMode
+    ? { audioPreset: LivekitClient.AudioPresets.musicHighQualityStereo, red: true, dtx: false }
+    : { audioPreset: LivekitClient.AudioPresets.music, red: true, dtx: true };
+}
 
 if (!roomName) {
   document.body.innerHTML = '<div class="landing"><h1>Link tidak valid</h1><p class="subtitle">Parameter room tidak ditemukan di URL.</p></div>';
@@ -200,11 +214,7 @@ async function joinAndConnect(name, peran, role, hostPasswordInput) {
 
     if (!skipCam) await room.localParticipant.setCameraEnabled(true);
     if (!skipMic) {
-      await room.localParticipant.setMicrophoneEnabled(true, {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-      });
+      await room.localParticipant.setMicrophoneEnabled(true, getMicCaptureOptions(), getMicPublishOptions());
     }
 
     room.localParticipant.videoTrackPublications.forEach((pub) => {
@@ -241,11 +251,7 @@ async function joinAndConnect(name, peran, role, hostPasswordInput) {
 function setupControls() {
   micBtn.addEventListener('click', async () => {
     const enabled = room.localParticipant.isMicrophoneEnabled;
-    await room.localParticipant.setMicrophoneEnabled(!enabled, {
-      echoCancellation: true,
-      noiseSuppression: true,
-      autoGainControl: true,
-    });
+    await room.localParticipant.setMicrophoneEnabled(!enabled, getMicCaptureOptions(), getMicPublishOptions());
     micBtn.classList.toggle('off', enabled);
     micBtn.querySelector('.tool-icon').innerHTML = enabled ? ICON_MIC_OFF : ICON_MIC;
     updateMicIndicator(room.localParticipant);
@@ -612,6 +618,17 @@ function setupMoreMenu() {
   document.addEventListener('click', (e) => {
     if (!moreMenu.contains(e.target) && e.target !== moreToolBtn && !moreToolBtn.contains(e.target)) {
       moreMenu.classList.add('hidden');
+    }
+  });
+
+  // Pengaturan audio device sendiri (bukan room-wide) -> boleh diatur host MAUPUN co-host
+  proAudioModeToggle.checked = professionalAudioMode;
+  proAudioModeToggle.addEventListener('change', async () => {
+    professionalAudioMode = proAudioModeToggle.checked;
+    if (room.localParticipant.isMicrophoneEnabled) {
+      // Matiin dulu lalu nyalain lagi biar track ke-republish pakai constraint & bitrate yang baru
+      await room.localParticipant.setMicrophoneEnabled(false);
+      await room.localParticipant.setMicrophoneEnabled(true, getMicCaptureOptions(), getMicPublishOptions());
     }
   });
 
