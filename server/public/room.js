@@ -62,6 +62,8 @@ const lirikTab = document.getElementById('lirikTab');
 const pesertaTab = document.getElementById('pesertaTab');
 
 const shareTopBtn = document.getElementById('shareTopBtn');
+const multiviewToggleBtn = document.getElementById('multiviewToggleBtn');
+const pageDots = document.getElementById('pageDots');
 const sharePopup = document.getElementById('sharePopup');
 const shareCodeText = document.getElementById('shareCodeText');
 const shareLinkInputRoom = document.getElementById('shareLinkInputRoom');
@@ -94,8 +96,14 @@ let intentionalLeave = false;
 let openParticipantMenuFor = null;
 const MAKS_COHOST = 3;
 let pinnedMessages = [];
-let roomSettings = { autoMuteNewJoin: false, autoCameraOffNewJoin: false, micLocked: false };
+let roomSettings = { autoMuteNewJoin: false, autoCameraOffNewJoin: false, micLocked: false, pinned: [] };
 let micLockedForMe = false; // true = peserta biasa TIDAK bisa buka mic sendiri sampai diizinkan host/co-host
+
+// ---- Grid video: pin, paginasi, multiview ----
+const MAKS_PIN = 2;
+let pinnedIdentities = [];
+let currentPage = 0;
+let multiviewActive = false;
 let currentFacingMode = 'user'; // 'user' = depan, 'environment' = belakang
 let poorQualityDismissed = false;
 let professionalAudioMode = false; // true = input dari mixer/soundcard, matiin echo cancellation dkk
@@ -169,6 +177,7 @@ async function joinAndConnect(name, peran, role, hostPasswordInput) {
         spotlight.innerHTML = '';
         spotlight.classList.add('hidden');
         grid.classList.remove('compact');
+        renderVideoGrid();
       }
     });
     room.on(LivekitClient.RoomEvent.ParticipantConnected, () => updateParticipantUI());
@@ -215,6 +224,7 @@ async function joinAndConnect(name, peran, role, hostPasswordInput) {
     const skipMic = !isHost && (roomSettings.autoMuteNewJoin || roomSettings.micLocked);
     const skipCam = !isHost && roomSettings.autoCameraOffNewJoin;
     micLockedForMe = !isHost && !!roomSettings.micLocked;
+    pinnedIdentities = Array.isArray(roomSettings.pinned) ? roomSettings.pinned : [];
 
     if (!skipCam) await room.localParticipant.setCameraEnabled(true);
     if (!skipMic) {
@@ -238,6 +248,7 @@ async function joinAndConnect(name, peran, role, hostPasswordInput) {
     }
 
     setupControls();
+    setupVideoGrid();
     setupTabs();
     setupMoreMenu();
     setupSharePopup();
@@ -399,6 +410,7 @@ function attachTrack(track, participant) {
     spotlight.appendChild(label);
     spotlight.classList.remove('hidden');
     grid.classList.add('compact');
+    renderVideoGrid();
     return;
   }
 
@@ -406,6 +418,7 @@ function attachTrack(track, participant) {
   if (!tile) tile = buildTile(participant);
   const el = track.attach();
   tile.insertBefore(el, tile.firstChild);
+  renderVideoGrid();
 }
 
 function buildTile(participant) {
@@ -474,6 +487,7 @@ function updateParticipantUI() {
   participantCountBadge.textContent = total;
   participantCountBadge.classList.toggle('hidden', total <= 1);
   renderParticipantsList();
+  renderVideoGrid();
 }
 
 function renderParticipantsList() {
@@ -496,12 +510,22 @@ function renderParticipantsList() {
     if (menuOpen) {
       const micOn = p.isMicrophoneEnabled;
       const camOn = p.isCameraEnabled;
+      const isPinned = pinnedIdentities.includes(p.identity);
 
       // Mute/unmute & kamera: boleh dipakai host MAUPUN co-host
       let moderasiHtml = `
         <button onclick="window.__forceMic('${p.identity}', ${!micOn})">${micOn ? '🔇 Matikan Mic' : '🎤 Nyalakan Mic'}</button>
         <button onclick="window.__forceCam('${p.identity}', ${!camOn})">${camOn ? '📷 Matikan Kamera' : '📷 Nyalakan Kamera'}</button>
       `;
+
+      // Pin/lepas pin: boleh dipakai host MAUPUN co-host, maks MAKS_PIN orang
+      if (isPinned) {
+        moderasiHtml += `<button onclick="window.__togglePin('${p.identity}')">📌 Lepas Pin</button>`;
+      } else if (pinnedIdentities.length >= MAKS_PIN) {
+        moderasiHtml += `<button disabled style="opacity:0.5;cursor:not-allowed">Maks ${MAKS_PIN} Pin tercapai</button>`;
+      } else {
+        moderasiHtml += `<button onclick="window.__togglePin('${p.identity}')">📌 Pin Peserta</button>`;
+      }
 
       // Jadikan/cabut co-host: khusus host
       let cohostHtml = '';
@@ -520,10 +544,12 @@ function renderParticipantsList() {
       dropdownHtml = `<div class="participant-dropdown">${moderasiHtml}${cohostHtml}</div>`;
     }
 
+    const isPinnedBadge = pinnedIdentities.includes(p.identity);
+
     return `
       <div class="participant-row">
         <div class="participant-avatar">${initial}</div>
-        <div class="participant-name">${p.name || p.identity}${isMe ? ' (kamu)' : ''}${coHost ? '<span class="cohost-badge">Co-Host</span>' : ''}</div>
+        <div class="participant-name">${p.name || p.identity}${isMe ? ' (kamu)' : ''}${coHost ? '<span class="cohost-badge">Co-Host</span>' : ''}${isPinnedBadge ? '<span class="pin-badge-inline">📌 Pin</span>' : ''}</div>
         <div class="participant-role">${peran}</div>
         ${showMenuBtn ? `
           <button class="participant-menu-btn" onclick="window.__toggleParticipantMenu('${p.identity}')">
@@ -589,6 +615,7 @@ function updateToolbarVisibility() {
   bibleToolBtn.classList.toggle('hidden', !privileged);
   lyricToolBtn.classList.toggle('hidden', !privileged);
   moreToolBtn.classList.toggle('hidden', !privileged);
+  multiviewToggleBtn.classList.toggle('hidden', !privileged);
   document.querySelector('.tab-btn[data-tab="alkitab"]').classList.toggle('hidden', !privileged);
   document.querySelector('.tab-btn[data-tab="lirik"]').classList.toggle('hidden', !privileged);
   // Peserta (siapa aja yang join) sengaja TIDAK di-hide -> semua peran boleh lihat daftar peserta.
@@ -598,6 +625,11 @@ function updateToolbarVisibility() {
   if (!privileged) {
     const active = document.querySelector('.tab-btn.active')?.dataset.tab;
     if (active === 'alkitab' || active === 'lirik') switchTab('chat');
+    // Kehilangan hak co-host -> paksa keluar dari mode Multiview juga
+    if (multiviewActive) {
+      multiviewActive = false;
+      renderVideoGrid();
+    }
   }
 }
 
@@ -703,7 +735,171 @@ function setupMoreMenu() {
   autoCamOffToggle.addEventListener('change', simpanPengaturanRoom);
 }
 
+// ==================== GRID VIDEO: PAGINASI, PIN, MULTIVIEW ====================
+
+function isLandscape() {
+  return window.innerWidth > window.innerHeight;
+}
+function getPageSize() {
+  return isLandscape() ? 6 : 4;
+}
+function getGridCols() {
+  return isLandscape() ? 3 : 2;
+}
+
+// Urutan tampil: peserta yang dipin (maks 2, sesuai urutan pin) selalu di depan (slot 1 & 2),
+// sisanya nyusul dalam urutan biasa.
+function getOrderedParticipants() {
+  const all = [room.localParticipant, ...room.remoteParticipants.values()];
+  const pinned = [];
+  pinnedIdentities.forEach((id) => {
+    const p = all.find((pp) => pp.identity === id);
+    if (p) pinned.push(p);
+  });
+  const rest = all.filter((p) => !pinnedIdentities.includes(p.identity));
+  return [...pinned, ...rest];
+}
+
+function renderVideoGrid() {
+  if (!room) return;
+
+  // Lagi screen share (mode compact) -> tampilkan semua tile apa adanya di strip horizontal, gak dipaginasi
+  if (grid.classList.contains('compact')) {
+    document.querySelectorAll('.tile').forEach((t) => t.classList.remove('hidden'));
+    grid.style.gridTemplateColumns = '';
+    grid.style.gridTemplateRows = '';
+    pageDots.classList.add('hidden');
+    return;
+  }
+
+  const ordered = getOrderedParticipants();
+
+  if (multiviewActive) {
+    grid.classList.add('multiview');
+    grid.style.gridTemplateColumns = '';
+    grid.style.gridTemplateRows = '';
+    ordered.forEach((p) => {
+      const tile = document.getElementById(`tile-${p.identity}`);
+      if (tile) {
+        tile.classList.remove('hidden');
+        tile.classList.toggle('pinned', pinnedIdentities.includes(p.identity));
+      }
+    });
+    pageDots.classList.add('hidden');
+    return;
+  }
+
+  grid.classList.remove('multiview');
+
+  const pageSize = getPageSize();
+  const cols = getGridCols();
+  const totalPages = Math.max(1, Math.ceil(ordered.length / pageSize));
+  if (currentPage >= totalPages) currentPage = totalPages - 1;
+  if (currentPage < 0) currentPage = 0;
+
+  const start = currentPage * pageSize;
+  const pageItems = ordered.slice(start, start + pageSize);
+  const pageIdentities = new Set(pageItems.map((p) => p.identity));
+
+  ordered.forEach((p) => {
+    const tile = document.getElementById(`tile-${p.identity}`);
+    if (!tile) return;
+    tile.classList.toggle('hidden', !pageIdentities.has(p.identity));
+    tile.classList.toggle('pinned', pinnedIdentities.includes(p.identity));
+  });
+
+  const activeCols = Math.max(1, Math.min(cols, pageItems.length));
+  const rows = Math.max(1, Math.ceil(pageItems.length / cols));
+  grid.style.gridTemplateColumns = `repeat(${activeCols}, 1fr)`;
+  grid.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
+
+  renderPageDots(totalPages);
+}
+
+function renderPageDots(totalPages) {
+  if (totalPages <= 1) {
+    pageDots.classList.add('hidden');
+    pageDots.innerHTML = '';
+    return;
+  }
+  pageDots.classList.remove('hidden');
+  pageDots.innerHTML = '';
+  for (let i = 0; i < totalPages; i++) {
+    const dot = document.createElement('button');
+    dot.type = 'button';
+    dot.className = 'page-dot' + (i === currentPage ? ' active' : '');
+    dot.addEventListener('click', () => { currentPage = i; renderVideoGrid(); });
+    pageDots.appendChild(dot);
+  }
+}
+
+// Pin/unpin peserta (khusus host/co-host). Disimpan di room metadata biar keliatan SAMA buat semua orang.
+function togglePin(identity) {
+  let newPinned = [...pinnedIdentities];
+  if (newPinned.includes(identity)) {
+    newPinned = newPinned.filter((id) => id !== identity);
+  } else {
+    if (newPinned.length >= MAKS_PIN) {
+      alert(`Maksimal ${MAKS_PIN} peserta yang bisa dipin sekaligus. Lepas salah satu dulu ya.`);
+      return;
+    }
+    newPinned.push(identity);
+  }
+  openParticipantMenuFor = null;
+  renderParticipantsList();
+  simpanPinSettings(newPinned);
+}
+window.__togglePin = togglePin;
+
+async function simpanPinSettings(newPinned) {
+  try {
+    await fetch(`${API_BASE}/api/room/${roomName}/settings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pinned: newPinned }),
+    });
+    // UI/grid ke-update sendiri buat semua orang lewat event RoomMetadataChanged
+  } catch (err) {
+    console.warn('Gagal simpan pengaturan pin', err);
+  }
+}
+
+// Multiview: cuma buat layar sendiri (host/co-host), gak ngubah tampilan peserta lain.
+function toggleMultiview() {
+  multiviewActive = !multiviewActive;
+  multiviewToggleBtn.classList.toggle('active', multiviewActive);
+  multiviewToggleBtn.textContent = multiviewActive ? '🖥️' : '🔳';
+  multiviewToggleBtn.title = multiviewActive ? 'Kembali ke Tampilan Utama' : 'Multiview (lihat semua peserta, buat absen)';
+  renderVideoGrid();
+}
+
+function setupVideoGrid() {
+  multiviewToggleBtn.addEventListener('click', toggleMultiview);
+
+  // Swipe buat ganti halaman di HP
+  let swipeStartX = null;
+  grid.addEventListener('touchstart', (e) => {
+    if (multiviewActive) return;
+    swipeStartX = e.touches[0].clientX;
+  });
+  grid.addEventListener('touchend', (e) => {
+    if (multiviewActive || swipeStartX === null) return;
+    const diff = e.changedTouches[0].clientX - swipeStartX;
+    swipeStartX = null;
+    if (Math.abs(diff) < 50) return; // swipe kekecilan, abaikan
+    currentPage += diff < 0 ? 1 : -1;
+    renderVideoGrid();
+  });
+
+  let resizeTimeout;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeTimeout);
+    resizeTimeout = setTimeout(() => renderVideoGrid(), 200);
+  });
+}
+
 // ==================== KUNCI MIC SEMUA (dipicu host/co-host lewat tombol di menu More) ====================
+
 
 async function handleRoomMetadataChanged(metadata) {
   let newSettings = {};
@@ -711,6 +907,7 @@ async function handleRoomMetadataChanged(metadata) {
 
   const wasLocked = !!roomSettings.micLocked;
   roomSettings = newSettings;
+  pinnedIdentities = Array.isArray(roomSettings.pinned) ? roomSettings.pinned : [];
   const nowLocked = !!roomSettings.micLocked;
   const privileged = isHost || isCoHost;
 
@@ -730,6 +927,8 @@ async function handleRoomMetadataChanged(metadata) {
   }
 
   updateMuteAllBtnLabel();
+  renderVideoGrid();
+  renderParticipantsList();
 }
 
 function updateMuteAllBtnLabel() {
