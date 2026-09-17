@@ -179,9 +179,12 @@
             <input type="checkbox" id="autoCamOffToggle" />
             Auto-matikan kamera peserta baru saat join
           </label>
-          <button id="muteAllBtn" class="more-menu-action">🔇 Matikan Semua Mic Peserta</button>
         </div>
-        <div id="moreMenuNotHost" class="hint hidden">Cuma host yang bisa atur pengaturan ini.</div>
+        <div id="moreMenuModerator">
+          <button id="muteAllBtn" class="more-menu-action">🔒 Kunci &amp; Matikan Semua Mic Peserta</button>
+          <p class="hint">Mic semua orang (termasuk host/co-host) akan mati. Peserta biasa TIDAK bisa membuka mic sendiri sampai kamu buka lewat menu titik-3 di daftar Peserta. Host & co-host tetap bebas buka/tutup mic sendiri.</p>
+        </div>
+        <div id="moreMenuNotHost" class="hint hidden">Cuma host & co-host yang bisa atur pengaturan ini.</div>
       </div>
     </div>
   </div>
