@@ -92,17 +92,29 @@ app.listen(PORT, () => {
 
 // ==================== PENGATURAN HOST ====================
 
-// Simpan pengaturan (auto-mute / auto-camera-off peserta baru) di metadata room LiveKit,
-// supaya semua client yang connect bisa baca pengaturan terbaru langsung dari room.metadata
+// Simpan pengaturan (auto-mute / auto-camera-off / kunci-mic-semua) di metadata room LiveKit,
+// supaya semua client yang connect (termasuk yang baru join belakangan) bisa baca pengaturan
+// terbaru langsung dari room.metadata. Di-MERGE dengan metadata lama supaya field yang gak
+// dikirim di request ini gak ikut hilang/ke-reset.
 app.post('/api/room/:room/settings', async (req, res) => {
   try {
     const { room } = req.params;
-    const { autoMuteNewJoin, autoCameraOffNewJoin } = req.body;
-    await roomService.updateRoomMetadata(
-      room,
-      JSON.stringify({ autoMuteNewJoin: !!autoMuteNewJoin, autoCameraOffNewJoin: !!autoCameraOffNewJoin })
-    );
-    res.json({ ok: true });
+
+    let current = {};
+    try {
+      const rooms = await roomService.listRooms([room]);
+      current = JSON.parse(rooms[0]?.metadata || '{}');
+    } catch (e) {
+      current = {};
+    }
+
+    const merged = { ...current, ...req.body };
+    if ('autoMuteNewJoin' in merged) merged.autoMuteNewJoin = !!merged.autoMuteNewJoin;
+    if ('autoCameraOffNewJoin' in merged) merged.autoCameraOffNewJoin = !!merged.autoCameraOffNewJoin;
+    if ('micLocked' in merged) merged.micLocked = !!merged.micLocked;
+
+    await roomService.updateRoomMetadata(room, JSON.stringify(merged));
+    res.json({ ok: true, settings: merged });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Gagal update pengaturan room' });
