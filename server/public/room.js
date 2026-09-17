@@ -46,6 +46,7 @@ const chatTopBtn = document.getElementById('chatTopBtn');
 
 const moreMenu = document.getElementById('moreMenu');
 const moreMenuHostOnly = document.getElementById('moreMenuHostOnly');
+const moreMenuModerator = document.getElementById('moreMenuModerator');
 const proAudioModeToggle = document.getElementById('proAudioModeToggle');
 const moreMenuNotHost = document.getElementById('moreMenuNotHost');
 const autoMuteToggle = document.getElementById('autoMuteToggle');
@@ -93,7 +94,8 @@ let intentionalLeave = false;
 let openParticipantMenuFor = null;
 const MAKS_COHOST = 3;
 let pinnedMessages = [];
-let roomSettings = { autoMuteNewJoin: false, autoCameraOffNewJoin: false };
+let roomSettings = { autoMuteNewJoin: false, autoCameraOffNewJoin: false, micLocked: false };
+let micLockedForMe = false; // true = peserta biasa TIDAK bisa buka mic sendiri sampai diizinkan host/co-host
 let currentFacingMode = 'user'; // 'user' = depan, 'environment' = belakang
 let poorQualityDismissed = false;
 let professionalAudioMode = false; // true = input dari mixer/soundcard, matiin echo cancellation dkk
@@ -185,6 +187,7 @@ async function joinAndConnect(name, peran, role, hostPasswordInput) {
     room.on(LivekitClient.RoomEvent.TrackMuted, (pub, participant) => updateMicIndicator(participant));
     room.on(LivekitClient.RoomEvent.TrackUnmuted, (pub, participant) => updateMicIndicator(participant));
     room.on(LivekitClient.RoomEvent.ParticipantMetadataChanged, () => renderParticipantsList());
+    room.on(LivekitClient.RoomEvent.RoomMetadataChanged, (metadata) => handleRoomMetadataChanged(metadata));
     room.on(LivekitClient.RoomEvent.ConnectionQualityChanged, (quality, participant) => {
       if (participant === room.localParticipant) updateConnQualityUI(quality);
     });
@@ -206,11 +209,12 @@ async function joinAndConnect(name, peran, role, hostPasswordInput) {
     await room.connect(data.url, data.token);
     room.localParticipant.setMetadata(JSON.stringify({ peran: myPeran }));
 
-    // Baca pengaturan room (auto-mute / auto-camera-off) yang mungkin sudah diset host
+    // Baca pengaturan room (auto-mute / auto-camera-off / kunci-mic-semua) yang mungkin sudah diset host
     try { roomSettings = JSON.parse(room.metadata || '{}'); } catch (e) { roomSettings = {}; }
 
-    const skipMic = !isHost && roomSettings.autoMuteNewJoin;
+    const skipMic = !isHost && (roomSettings.autoMuteNewJoin || roomSettings.micLocked);
     const skipCam = !isHost && roomSettings.autoCameraOffNewJoin;
+    micLockedForMe = !isHost && !!roomSettings.micLocked;
 
     if (!skipCam) await room.localParticipant.setCameraEnabled(true);
     if (!skipMic) {
@@ -248,35 +252,61 @@ async function joinAndConnect(name, peran, role, hostPasswordInput) {
   }
 }
 
+// Nyalakan/matikan mic LOKAL + update UI tombol mic. Dipakai baik saat user klik tombol mic sendiri,
+// MAUPUN saat menerima perintah force-mic dari host/co-host lewat data channel.
+async function setMicEnabled(enabled) {
+  await room.localParticipant.setMicrophoneEnabled(enabled, getMicCaptureOptions(), getMicPublishOptions());
+  micBtn.classList.toggle('off', !enabled);
+  micBtn.querySelector('.tool-icon').innerHTML = enabled ? ICON_MIC : ICON_MIC_OFF;
+  updateMicIndicator(room.localParticipant);
+}
+
+// Nyalakan/matikan kamera LOKAL + update UI tombol kamera & tile video sendiri. Dipakai baik saat user
+// klik tombol kamera sendiri, MAUPUN saat menerima perintah force-cam dari host/co-host.
+async function setCamEnabled(enabled) {
+  await room.localParticipant.setCameraEnabled(enabled);
+  camBtn.classList.toggle('off', !enabled);
+  camBtn.querySelector('.tool-icon').innerHTML = enabled ? ICON_CAM : ICON_CAM_OFF;
+
+  const tile = document.getElementById(`tile-${room.localParticipant.identity}`) || buildTile(room.localParticipant);
+  if (!enabled) {
+    // kamera baru dimatikan -> hapus video lokal dari layar sendiri
+    tile.querySelector('video')?.remove();
+  } else {
+    // kamera baru dinyalain lagi -> tempelin ulang video track yang baru ke layar sendiri
+    // (kalau gak gini, video CUMA muncul di layar orang lain, layar sendiri tetap kosong)
+    room.localParticipant.videoTrackPublications.forEach((pub) => {
+      if (pub.track && pub.source === LivekitClient.Track.Source.Camera && !tile.querySelector('video')) {
+        const el = pub.track.attach();
+        tile.insertBefore(el, tile.firstChild);
+      }
+    });
+  }
+}
+
+// Toast kecil buat kasih tau peserta kalau mic/kameranya baru saja diubah oleh host/co-host
+function showToast(text) {
+  const el = document.createElement('div');
+  el.textContent = text;
+  el.style.cssText = 'position:fixed;bottom:110px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.85);color:#fff;padding:10px 18px;border-radius:8px;font-size:14px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.3);max-width:90%;text-align:center;';
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 3000);
+}
+
 function setupControls() {
   micBtn.addEventListener('click', async () => {
     const enabled = room.localParticipant.isMicrophoneEnabled;
-    await room.localParticipant.setMicrophoneEnabled(!enabled, getMicCaptureOptions(), getMicPublishOptions());
-    micBtn.classList.toggle('off', enabled);
-    micBtn.querySelector('.tool-icon').innerHTML = enabled ? ICON_MIC_OFF : ICON_MIC;
-    updateMicIndicator(room.localParticipant);
+    const privileged = isHost || isCoHost;
+    if (!enabled && micLockedForMe && !privileged) {
+      showToast('🔒 Mic kamu dikunci oleh host. Minta host/co-host untuk membukanya lewat menu Peserta.');
+      return;
+    }
+    await setMicEnabled(!enabled);
   });
 
   camBtn.addEventListener('click', async () => {
     const wasEnabled = room.localParticipant.isCameraEnabled;
-    await room.localParticipant.setCameraEnabled(!wasEnabled);
-    camBtn.classList.toggle('off', wasEnabled);
-    camBtn.querySelector('.tool-icon').innerHTML = wasEnabled ? ICON_CAM_OFF : ICON_CAM;
-
-    const tile = document.getElementById(`tile-${room.localParticipant.identity}`) || buildTile(room.localParticipant);
-    if (wasEnabled) {
-      // kamera baru dimatikan -> hapus video lokal dari layar sendiri
-      tile.querySelector('video')?.remove();
-    } else {
-      // kamera baru dinyalain lagi -> tempelin ulang video track yang baru ke layar sendiri
-      // (kalau gak gini, video CUMA muncul di layar orang lain, layar sendiri tetap kosong)
-      room.localParticipant.videoTrackPublications.forEach((pub) => {
-        if (pub.track && pub.source === LivekitClient.Track.Source.Camera && !tile.querySelector('video')) {
-          const el = pub.track.attach();
-          tile.insertBefore(el, tile.firstChild);
-        }
-      });
-    }
+    await setCamEnabled(!wasEnabled);
   });
 
   switchCamBtn.addEventListener('click', async () => {
@@ -458,29 +488,36 @@ function renderParticipantsList() {
     } catch (e) {}
     const initial = (p.name || p.identity).slice(0, 1).toUpperCase();
     const isMe = p === room.localParticipant;
-    const showMenuBtn = isHost && !isMe; // cuma host yang bisa atur co-host, gak buat diri sendiri
+    const targetIsHost = p.identity.startsWith('host-'); // host gak boleh dimoderasi siapapun, termasuk co-host lain
+    const showMenuBtn = (isHost || isCoHost) && !isMe && !targetIsHost;
     const menuOpen = openParticipantMenuFor === p.identity;
 
     let dropdownHtml = '';
     if (menuOpen) {
-      const cohostCount = countCoHosts();
-      const limitReached = cohostCount >= MAKS_COHOST;
-      if (coHost) {
-        dropdownHtml = `
-          <div class="participant-dropdown">
-            <button class="danger-text" onclick="window.__revokeCoHost('${p.identity}')">Cabut Co-Host</button>
-          </div>`;
-      } else if (limitReached) {
-        dropdownHtml = `
-          <div class="participant-dropdown">
-            <button disabled style="opacity:0.5;cursor:not-allowed">Maks ${MAKS_COHOST} Co-Host tercapai</button>
-          </div>`;
-      } else {
-        dropdownHtml = `
-          <div class="participant-dropdown">
-            <button onclick="window.__assignCoHost('${p.identity}')">Jadikan Co-Host</button>
-          </div>`;
+      const micOn = p.isMicrophoneEnabled;
+      const camOn = p.isCameraEnabled;
+
+      // Mute/unmute & kamera: boleh dipakai host MAUPUN co-host
+      let moderasiHtml = `
+        <button onclick="window.__forceMic('${p.identity}', ${!micOn})">${micOn ? '🔇 Matikan Mic' : '🎤 Nyalakan Mic'}</button>
+        <button onclick="window.__forceCam('${p.identity}', ${!camOn})">${camOn ? '📷 Matikan Kamera' : '📷 Nyalakan Kamera'}</button>
+      `;
+
+      // Jadikan/cabut co-host: khusus host
+      let cohostHtml = '';
+      if (isHost) {
+        const cohostCount = countCoHosts();
+        const limitReached = cohostCount >= MAKS_COHOST;
+        if (coHost) {
+          cohostHtml = `<button class="danger-text" onclick="window.__revokeCoHost('${p.identity}')">Cabut Co-Host</button>`;
+        } else if (limitReached) {
+          cohostHtml = `<button disabled style="opacity:0.5;cursor:not-allowed">Maks ${MAKS_COHOST} Co-Host tercapai</button>`;
+        } else {
+          cohostHtml = `<button onclick="window.__assignCoHost('${p.identity}')">Jadikan Co-Host</button>`;
+        }
       }
+
+      dropdownHtml = `<div class="participant-dropdown">${moderasiHtml}${cohostHtml}</div>`;
     }
 
     return `
@@ -526,6 +563,23 @@ function revokeCoHost(identity) {
   renderParticipantsList();
 }
 window.__revokeCoHost = revokeCoHost;
+
+// Host/co-host minta mic peserta tertentu dimatikan/dinyalakan.
+// Yang benar-benar mengeksekusi adalah browser milik peserta itu sendiri (lihat handleDataMessage).
+function forceMic(identity, enabled) {
+  sendData({ type: 'force-mic', target: identity, enabled });
+  openParticipantMenuFor = null;
+  renderParticipantsList();
+}
+window.__forceMic = forceMic;
+
+// Host/co-host minta kamera peserta tertentu dimatikan/dinyalakan.
+function forceCam(identity, enabled) {
+  sendData({ type: 'force-cam', target: identity, enabled });
+  openParticipantMenuFor = null;
+  renderParticipantsList();
+}
+window.__forceCam = forceCam;
 
 // ==================== VISIBILITAS TOOLBAR (host & co-host vs peserta biasa) ====================
 
@@ -611,8 +665,10 @@ function switchTab(tabName) {
 // ==================== MENU "MORE" (pengaturan host) ====================
 
 function setupMoreMenu() {
+  const privileged = isHost || isCoHost;
   moreMenuHostOnly.classList.toggle('hidden', !isHost);
-  moreMenuNotHost.classList.toggle('hidden', isHost);
+  moreMenuModerator.classList.toggle('hidden', !privileged);
+  moreMenuNotHost.classList.toggle('hidden', privileged);
 
   moreToolBtn.addEventListener('click', () => moreMenu.classList.toggle('hidden'));
   document.addEventListener('click', (e) => {
@@ -632,6 +688,12 @@ function setupMoreMenu() {
     }
   });
 
+  if (!privileged) return;
+
+  // Tombol kunci mic semua: dipakai host & co-host
+  updateMuteAllBtnLabel();
+  muteAllBtn.addEventListener('click', toggleMicLockAll);
+
   if (!isHost) return;
 
   autoMuteToggle.checked = !!roomSettings.autoMuteNewJoin;
@@ -639,26 +701,68 @@ function setupMoreMenu() {
 
   autoMuteToggle.addEventListener('change', simpanPengaturanRoom);
   autoCamOffToggle.addEventListener('change', simpanPengaturanRoom);
+}
 
-  muteAllBtn.addEventListener('click', async () => {
-    muteAllBtn.disabled = true;
-    muteAllBtn.textContent = 'Memproses...';
-    try {
-      const res = await fetch(`${API_BASE}/api/room/${roomName}/mute-all`, { method: 'POST' });
-      const data = await res.json();
-      muteAllBtn.textContent = res.ok ? `✅ ${data.dimatikan} mic dimatikan` : '🔇 Matikan Semua Mic Peserta';
-    } catch (err) {
-      alert('Gagal matikan mic semua peserta: ' + err.message);
-      muteAllBtn.textContent = '🔇 Matikan Semua Mic Peserta';
-    } finally {
-      muteAllBtn.disabled = false;
-      setTimeout(() => { muteAllBtn.textContent = '🔇 Matikan Semua Mic Peserta'; }, 2500);
+// ==================== KUNCI MIC SEMUA (dipicu host/co-host lewat tombol di menu More) ====================
+
+async function handleRoomMetadataChanged(metadata) {
+  let newSettings = {};
+  try { newSettings = JSON.parse(metadata || '{}'); } catch (e) {}
+
+  const wasLocked = !!roomSettings.micLocked;
+  roomSettings = newSettings;
+  const nowLocked = !!roomSettings.micLocked;
+  const privileged = isHost || isCoHost;
+
+  if (nowLocked && !wasLocked) {
+    // Kunci baru diaktifkan -> matikan mic SEMUA ORANG yang sedang nyala, termasuk host/co-host.
+    // Host/co-host tetap boleh nyalain lagi sendiri kapan saja (gak kena micLockedForMe).
+    if (room.localParticipant.isMicrophoneEnabled) await setMicEnabled(false);
+    if (!privileged) {
+      micLockedForMe = true;
+      showToast('🔒 Mic kamu dikunci oleh host. Kamu gak bisa membukanya sendiri sampai diizinkan.');
     }
-  });
+  } else if (!nowLocked && wasLocked) {
+    if (!privileged) {
+      micLockedForMe = false;
+      showToast('🔓 Mic kamu sudah bisa dibuka sendiri lagi.');
+    }
+  }
+
+  updateMuteAllBtnLabel();
+}
+
+function updateMuteAllBtnLabel() {
+  if (!muteAllBtn) return;
+  muteAllBtn.textContent = roomSettings.micLocked
+    ? '🔓 Buka Kunci Mic Semua Peserta'
+    : '🔒 Kunci & Matikan Semua Mic Peserta';
+}
+
+async function toggleMicLockAll() {
+  const newLocked = !roomSettings.micLocked;
+  muteAllBtn.disabled = true;
+  muteAllBtn.textContent = 'Memproses...';
+  try {
+    const res = await fetch(`${API_BASE}/api/room/${roomName}/settings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ micLocked: newLocked }),
+    });
+    if (!res.ok) throw new Error('Gagal update pengaturan');
+    // Perubahan UI/mic sebenarnya dijalankan oleh handleRoomMetadataChanged saat event masuk,
+    // biar host sendiri juga konsisten dengan peserta lain.
+  } catch (err) {
+    alert('Gagal mengubah kunci mic: ' + err.message);
+  } finally {
+    muteAllBtn.disabled = false;
+    updateMuteAllBtnLabel();
+  }
 }
 
 async function simpanPengaturanRoom() {
   roomSettings = {
+    ...roomSettings,
     autoMuteNewJoin: autoMuteToggle.checked,
     autoCameraOffNewJoin: autoCamOffToggle.checked,
   };
@@ -753,7 +857,7 @@ function sendData(obj) {
   room.localParticipant.publishData(new TextEncoder().encode(JSON.stringify(obj)), { reliable: true });
 }
 
-function handleDataMessage(msg) {
+async function handleDataMessage(msg) {
   if (msg.type === 'chat') {
     renderChatMessage(msg, false);
   } else if (msg.type === 'pin-add') {
@@ -785,6 +889,23 @@ function handleDataMessage(msg) {
       updateToolbarVisibility();
     }
     renderParticipantsList();
+  } else if (msg.type === 'force-mic') {
+    if (msg.target === room.localParticipant.identity) {
+      await setMicEnabled(msg.enabled);
+      if (!isHost && !isCoHost) {
+        if (msg.enabled) {
+          micLockedForMe = false; // dibuka manual oleh host/co-host -> kamu bebas atur sendiri setelah ini
+        } else if (roomSettings.micLocked) {
+          micLockedForMe = true; // lagi mode kunci semua -> balik terkunci
+        }
+      }
+      showToast(msg.enabled ? '🎤 Mic kamu dibuka oleh host/co-host' : '🔇 Mic kamu dimatikan oleh host/co-host');
+    }
+  } else if (msg.type === 'force-cam') {
+    if (msg.target === room.localParticipant.identity) {
+      await setCamEnabled(msg.enabled);
+      showToast(msg.enabled ? '📷 Kamera kamu dinyalakan oleh host/co-host' : '📷 Kamera kamu dimatikan oleh host/co-host');
+    }
   }
 }
 
