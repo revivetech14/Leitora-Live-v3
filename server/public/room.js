@@ -180,10 +180,18 @@ async function joinAndConnect(name, peran, role, hostPasswordInput) {
         renderVideoGrid();
       }
     });
-    room.on(LivekitClient.RoomEvent.ParticipantConnected, () => updateParticipantUI());
+    room.on(LivekitClient.RoomEvent.ParticipantConnected, (participant) => {
+      if (participant.identity.startsWith('host-')) {
+        showToast('✅ Host sudah bergabung kembali.');
+      }
+      updateParticipantUI();
+    });
     room.on(LivekitClient.RoomEvent.ParticipantDisconnected, (participant) => {
       const tile = document.getElementById(`tile-${participant.identity}`);
       if (tile) tile.remove();
+      if (participant.identity.startsWith('host-')) {
+        showToast('🔌 Host terputus sementara. Siaran tetap berlangsung, tunggu host bergabung lagi.');
+      }
       updateParticipantUI();
     });
     room.on(LivekitClient.RoomEvent.ActiveSpeakersChanged, (speakers) => {
