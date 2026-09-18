@@ -359,7 +359,7 @@ button.danger:hover { background: #c7362f; }
 .chat-msg .when { color: #7a7f8c; font-size: 10.5px; margin-left: 6px; font-weight: 400; }
 .chat-msg .bubble { background: #1e212b; padding: 8px 10px; border-radius: 10px; margin-top: 3px; display: inline-block; }
 .chat-msg.mine { align-self: flex-end; text-align: right; }
-.chat-msg.mine .bubble { background: #4a3d9e; }
+.chat-msg.mine .bubble { background: #4a3d9e; text-align: left; }
 .chat-input-row { display: flex; gap: 8px; }
 .chat-input-row input { flex: 1; padding: 10px 12px; }
 .chat-input-row button { padding: 10px 14px; }
